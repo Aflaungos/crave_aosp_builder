@@ -8,7 +8,8 @@
 name: Upload from foss.crave.io
 on:
   workflow_dispatch:
-inputs:
+    # Various inputs to simplify usage of workflow.
+    inputs:
       DEVICE_NAME:
         description: "Device's codename:"
         required: true
