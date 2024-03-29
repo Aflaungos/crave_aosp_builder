@@ -7,11 +7,16 @@
 
 name: Crave Builder
 on:
-  workflow_dispatch
+  workflow_dispatch:
+inputs:
+      DEVICE_NAME:
+        description: "Device's codename:"
+        required: true
+        default: "m23xq"
   
 jobs:
   test:
-    name: Build using foss.crave.io
+    name: Upload from foss.crave.io
       # Change this to self-hosted after setting up devspace as github actions runner
     runs-on: ubuntu-latest
     concurrency:
