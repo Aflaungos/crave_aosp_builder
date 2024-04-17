@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-name: Crave Builder
+name: Crave Builder LineageOS
 on:
   workflow_dispatch:
     # Various inputs to simplify usage of workflow.
