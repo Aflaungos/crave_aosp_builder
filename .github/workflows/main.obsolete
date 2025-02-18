@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-name: Crave Builder(self-hosted)
+name: Crave Builder
 on:
   workflow_dispatch:
     # Various inputs to simplify usage of workflow.
@@ -74,55 +74,6 @@ on:
         - 'no'
 
 jobs:
-  Start-Runner:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up environment
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y tmux
-
-      # Download and configure 'crave'.
-    - name: Configure the 'crave' environment
-      run: |
-        echo "DCDEVSPACE status: ${DCDEVSPACE}"
-        if [[ "${DCDEVSPACE}" == "1" ]]; then
-        echo 'No need to set up crave, we are already running in devspace!'
-        else
-          mkdir ${HOME}/bin/
-          curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
-          mv ${PWD}/crave ${HOME}/bin/
-          sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave
-          envsubst < ${PWD}/crave.conf.sample >> ${PWD}/crave.conf
-          rm -rf ${PWD}/crave.conf.sample          
-        fi
-      env:
-        CRAVE_USERNAME: ${{  secrets.CRAVE_USERNAME  }}
-        CRAVE_TOKEN: ${{  secrets.CRAVE_TOKEN  }}
-
-    - name: Run crave devspace
-      run: |
-        crave ${{ secrets.CRAVE_FLAGS }} devspace -- "echo "Looking for runner..."
-          # Look for whether there's a runner folder set up
-          if [ -f actions-runner/run.sh ] ; then
-            echo "Runner found! Restarting it..."
-          else
-            echo "Error! Runner not found!"
-            exit 1
-          fi
-
-        if tmux has-session -t ghactions; then 
-          echo "Runner is already Running" 
-        else 
-          tmux kill-session -t ghactions;
-          tmux new-session -d -s ghactions 
-          tmux send-keys -t ghactions './actions-runner/run.sh' Enter 
-          echo "Runner Started"
-        fi "
   prepare:
     name: Prepare for Building
     runs-on: ubuntu-latest
@@ -146,6 +97,7 @@ jobs:
           export PROJECTFOLDER="/crave-devspaces/Arrow13"
           export PROJECTID="73"
           export REPO_INIT="repo init -u https://github.com/ArrowOS/android_manifest.git -b arrow-13.1 --depth=1"
+
         ;;
         "DerpFest 14.0")
           export PROJECTFOLDER="/crave-devspaces/DerpFest14"
@@ -211,6 +163,7 @@ jobs:
         else
             LUNCH="breakfast ${{ github.event.inputs.PRODUCT_NAME }} ${{ github.event.inputs.BUILD_TYPE }}"
         fi
+
 
           if [[ "${{ github.event.inputs.LOCAL_MANIFEST }}" =~ \.xml(/)?$ ]]; then
             local_manifest_url="${{ github.event.inputs.LOCAL_MANIFEST }}"
@@ -329,11 +282,12 @@ jobs:
       LUNCH: ${{ needs.prepare.outputs.LUNCH }}
       LOCAL_MANIFEST: "${{ needs.prepare.outputs.LOCAL_MANIFEST }}"
 
+
   build:
-    timeout-minutes: 1440
     name: Build using foss.crave.io
-    needs: test
-    runs-on: self-hosted
+    needs: test 
+      # Change this to self-hosted after setting up devspace as github actions runner
+    runs-on: ubuntu-latest
     concurrency:
       group: ${{ github.repository_owner }}
     steps:
@@ -352,40 +306,17 @@ jobs:
         echo "LUNCH=$LUNCH" >> "$GITHUB_ENV"
         echo "LOCAL_MANIFEST=$LOCAL_MANIFEST" >> "$GITHUB_ENV"
 
-      # Send Build 'start' notification
-    - name: Telegram Notification
-      continue-on-error: true
-      run: |
-        send_telegram_message() {
-          local message="$1"
-          curl -s -X POST \
-          https://api.telegram.org/bot$botToken/sendMessage \
-          -d chat_id=$chatId \
-          -d text="$message" \
-          -d parse_mode="Markdown"
-        }
-        
-        send_telegram_message "Crave Project: ${{ github.event.inputs.BASE_PROJECT }}%0ACrave ProjectID: $PROJECTID %0ABuild for ${{ github.event.inputs.DEVICE_NAME }} has been queued %0ACheck Progress at: %0Ahttps://github.com/$(echo "${{ github.repository }}" | sed 's@_@\\_@g')/actions/runs/${{ github.run_id }}"
-      env:
-        chatId: ${{ secrets.TELEGRAM_TO }}
-        botToken: ${{ secrets.TELEGRAM_TOKEN }}
-        jobStatus: "Build Started"
-        skipSuccess: false
-
-    - name: Cleanup
-      run: rm -rf * # This cleans github actions workspace
-
       # Create a project folder
     - name: Create Project Folders
       run: |
         echo "DCDEVSPACE status: ${DCDEVSPACE}"
         if [[ "${DCDEVSPACE}" != "1" ]]; then
+          
+          curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s -- 
 
-          #curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s -- 
-
-          #mkdir -p ${HOME}/bin/
-          #mv ${PWD}/crave ${HOME}/bin/ 
-          #sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave; sudo chmod +x /usr/bin/crave 
+          mkdir -p ${HOME}/bin/
+          mv ${PWD}/crave ${HOME}/bin/ 
+          sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave; sudo chmod +x /usr/bin/crave 
 
           echo "Symlinking devspace folder"
           mkdir -p devspace
@@ -406,7 +337,7 @@ jobs:
         else
           mkdir $PROJECTFOLDER
         fi
-        
+
       # Check-out in order to access the repository's files.
     - name: Check-out to repository
       uses: actions/checkout@v4
@@ -414,9 +345,28 @@ jobs:
       # Set-up a spearate directory for the device.
     - name: Set-up workspace environment
       run: |
-        cd $PROJECTFOLDER
         mkdir ${{ github.event.inputs.DEVICE_NAME }}
         cd ${{ github.event.inputs.DEVICE_NAME }}
+      continue-on-error: true
+
+      # Download and configure 'repo'.
+    - name: Configure the 'repo' environment
+      run: |
+        # Check if repo is already installed
+        if ! command -v repo >/dev/null 2>&1; then
+          echo "Repo not found. Installing now..."
+          # Create bin directory if it doesn't exist
+          mkdir -p ~/bin
+          # Download repo script
+          curl https://storage.googleapis.com/git-repo-downloads/repo >> ~/bin/repo
+          # Make repo script executable
+          chmod a+x ~/bin/repo
+          # Create symbolic link to /usr/bin/repo
+          sudo ln -sf "/home/$(whoami)/bin/repo" "/usr/bin/repo"
+          echo "Repo installation complete."
+        else
+          echo "Repo already installed."
+        fi
       continue-on-error: true
       
       # Generate 'git' credential in base of the workflow's author.
@@ -424,21 +374,41 @@ jobs:
       run: |
         git config --global user.name "${{ github.actor }}"
         git config --global user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-      
+
+      # Send Build 'start' notification
+    - name: Telegram Notification
+      continue-on-error: true
+      run: |
+        send_telegram_message() {
+          local message="$1"
+          curl -s -X POST \
+          https://api.telegram.org/bot$botToken/sendMessage \
+          -d chat_id=$chatId \
+          -d text="$message" \
+          -d parse_mode="Markdown"
+        }
+
+        send_telegram_message "Crave Project: ${{ github.event.inputs.BASE_PROJECT }}%0ACrave ProjectID: $PROJECTID %0ABuild for ${{ github.event.inputs.DEVICE_NAME }} has been queued %0ACheck Progress at: %0Ahttps://github.com/$(echo "${{ github.repository }}" | sed 's@_@\\_@g')/actions/runs/${{ github.run_id }}"
+      env:
+        chatId: ${{ secrets.TELEGRAM_TO }}
+        botToken: ${{ secrets.TELEGRAM_TOKEN }}
+        jobStatus: "Build Started"
+        skipSuccess: false
+
       # Download and configure 'crave'.
     - name: Configure the 'crave' environment
       run: |
         echo "DCDEVSPACE status: ${DCDEVSPACE}"
         mkdir -p $PROJECTFOLDER/.repo/manifests
         if [[ "${DCDEVSPACE}" == "1" ]]; then
-        echo 'No need to set up crave, we are already running in devspace!'
+          echo 'No need to set up crave, we are already running in devspace!'
         else
           curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
           mv ${PWD}/crave ${HOME}/bin/
           sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave
           envsubst < ${PWD}/crave.conf.sample >> ${PWD}/crave.conf
-          rm -rf ${PWD}/crave.conf.sample       
-          cp crave.conf $PROJECTFOLDER 
+          rm -rf ${PWD}/crave.conf.sample
+          cp crave.conf $PROJECTFOLDER
         fi
         if [[ -z "${{ secrets.CUSTOM_YAML }}" ]]; then
           cp configs/crave/crave.yaml.aosp $PROJECTFOLDER/.repo/manifests/crave.yaml
@@ -456,12 +426,8 @@ jobs:
     - name: Set the 'crave' project
       run: |
         cd $PROJECTFOLDER
-        if grep -q "$PROJECTFOLDER" <(crave clone list --json | jq -r '.clones[]."Cloned At"') || [[ "${DCDEVSPACE}" == "1" ]]; then
-          echo "Using Crave Clone... skipping"
-        else
-          echo "Running $REPO_INIT"
-          $REPO_INIT
-        fi
+        echo "Running $REPO_INIT"
+        $REPO_INIT
 
         if [ "${{ github.event.inputs.BUILD_DIFFERENT_ROM }}" == "echo 'Build Starting!'" ]; then
           export BUILD_DIFFERENT_ROM="$REPO_INIT"
@@ -478,8 +444,7 @@ jobs:
       if: ${{ github.event.inputs.BUILD_DIFFERENT_ROM != 'skip' }}
       run: |
         cd $PROJECTFOLDER
-        
-        jq '.projects = []' ~/crave.conf > tmp && mv tmp ~/crave.conf
+
         if [ "${{ github.event.inputs.CLEAN_BUILD }}" == "yes" ]; then
            export CLEAN="--clean"
         fi
@@ -518,7 +483,6 @@ jobs:
         $LUNCH && \
         make installclean && \
         ${{ github.event.inputs.BUILD_COMMAND }}"
-      timeout-minutes: 1440
 
       # Send Build 'status' notification (Success)
     - name: Telegram Notification
@@ -578,7 +542,6 @@ jobs:
 
       # Upload '.zip's and '.img's directly from 'crave' ssh.
     - name: Upload build artifact(s)
-      continue-on-error: true
       run: |
         cd $PROJECTFOLDER
         echo "${{ secrets.GITHUB_TOKEN }}" > token.txt
@@ -595,20 +558,4 @@ jobs:
         crave pull out/error.log
         echo "Displaying out/error.log"
         cat out/error.log
-
-      # Upload to Telegram
-    - name: Upload Using telegram-upload
-      run: |
-        cd $PROJECTFOLDER
-        crave ssh -- "export TG_UPLOAD_LIMIT="${{ secrets.TG_UPLOAD_LIMIT }}"; bash /opt/crave/telegram/upload.sh '${{ github.event.inputs.DEVICE_NAME }}' '${{ secrets.EXTRA_FILES }}'"
-      continue-on-error: true
-
-      # Remove 'crave' clone
-    - name: Destroy Crave Clone
-      if: ${{ always() }}
-      run: |
-        if grep -q "$PROJECTFOLDER" <(crave clone list --json | jq -r '.clones[]."Cloned At"') || [[ "${DCDEVSPACE}" == "1" ]]; then
-          crave clone destroy -y $PROJECTFOLDER || echo "Error removing $PROJECTFOLDER"
-        else          
-          echo "Skipping removal"
-        fi
+        #if [[ -z "${{ secrets.CUSTOM_YAML }}" ]]; then
