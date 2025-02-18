@@ -13,11 +13,12 @@ on:
       BASE_PROJECT:
         description: 'Choose a base project:'
         required: true
-        default: 'LineageOS 20.0'
+        default: 'LineageOS 22.1'
         type: choice
         options:
           - 'LineageOS 20.0'
           - 'LineageOS 21.0'
+          - 'LineageOS 22.1'
           - 'ArrowOS 13.1'
           - 'DerpFest 13.0'
           - 'CipherOS 14'
@@ -35,7 +36,7 @@ on:
       LOCAL_MANIFEST_BRANCH:
         description: "Personal local manifest's branch:"
         required: false
-        default: 'Lineage-21'
+        default: 'Lineage-22.1'
       DEVICE_NAME:
         description: "Device's codename:"
         required: true
@@ -78,6 +79,10 @@ jobs:
         "DerpFest 13.0")
           export PROJECTFOLDER="/crave-devspaces/DerpFest13"
           export REPO_INIT="repo init -u https://github.com/DerpFest-AOSP/manifest.git -b 13 --depth=1"
+        ;;
+        "LineageOS 22.1")
+          export PROJECTFOLDER="/crave-devspaces/Lineage22.1"
+          export REPO_INIT="repo init -u https://github.com/LineageOS/android.git -b lineage-22.1 --git-lfs --depth=1"
         ;;
         "LineageOS 21.0")
           export PROJECTFOLDER="/crave-devspaces/Lineage21"
@@ -154,6 +159,9 @@ jobs:
                   ;;
                   "DerpFest 13.0")
                     repo init -u https://github.com/DerpFest-AOSP/manifest.git -b 13 --depth=1
+                  ;;
+                  "LineageOS 22.1")
+                    repo init -u https://github.com/LineageOS/android.git -b lineage-22.1 --git-lfs --depth=1
                   ;;
                   "LineageOS 21.0")
                     repo init -u https://github.com/LineageOS/android.git -b lineage-21.0 --git-lfs --depth=1
